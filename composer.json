@@ -1,5 +1,5 @@
 {
-    "name": "lunakid/anim-gif",
+    "name": "tuxone/anim-gif",
     "type": "library",
     "description": "PHP class to create an animated GIF from multiple images",
     "keywords": ["gif", "animated", "creation", "encode", "PHP"],
@@ -15,6 +15,10 @@
             "name": "Szabolcs Szász",
             "homepage": "http://github.com/lunakid",
             "role": "Developer / Freelancer"
+        },
+        {
+            "name": "Alessandro Loffredo",
+            "homepage": "http://github.com/tuxone",
         }
     ],
     "require": {
