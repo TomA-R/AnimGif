@@ -71,9 +71,9 @@ class AnimGif
 	private $imgBuilt;
 
 	/**
-	* @var array Frames string sources
+	* @var string[] Frames string sources
 	*/
-	private $frameSources;
+	private $frameSources = array();
 
 	/**
 	* @var integer Gif loop
@@ -81,8 +81,13 @@ class AnimGif
 	private $loop;
 
 	/**
-	* @var integer Gif dis [!!?]
-	*/
+	 * @var int $disposal_method Disposal The disposal method specifies what happens to the current image data when you
+	 *                           move onto the next. We have three bits which means we can represent a number between 0 and 7
+	 *                           1 tells the decoder to leave the image in place and draw the next image on top of it
+	 *                           2 means that the canvas should be restored to the background color
+	 *                           3 means that the decoder should restore the canvas to its previous state before the current image was drawn
+	 *                           4-7 are yet to be defined
+	 */
 	private $dis;
 
 	/**
@@ -276,7 +281,7 @@ class AnimGif
 	 */
 	public function reset()
 	{
-		$this->frameSources = null;
+		$this->frameSources = array();
 		$this->gif = 'GIF89a'; // the GIF header
 		$this->imgBuilt = false;
 		$this->loop = 0;
@@ -300,7 +305,7 @@ class AnimGif
 
 			$this->gif .= substr($this->frameSources[0], 6, 7);
 			$this->gif .= substr($this->frameSources[0], 13, $cmap);
-			$this->gif .= "!\377\13NETSCAPE2.0\3\1".word2bin($this->loop)."\0";
+			$this->gif .= "!\377\13NETSCAPE2.0\3\1".self::word2bin($this->loop)."\0";
 		}
 	}
     
@@ -323,7 +328,7 @@ class AnimGif
 		$Global_rgb = substr($this->frameSources[ 0], 13, 3 * (2 << (ord($this->frameSources[ 0] { 10 }) & 0x07)));
 		$Locals_rgb = substr($this->frameSources[$i], 13, 3 * (2 << (ord($this->frameSources[$i] { 10 }) & 0x07)));
 
-		$Locals_ext = "!\xF9\x04" . chr(($this->dis << 2) + 0) . word2bin($d) . "\x0\x0";
+		$Locals_ext = "!\xF9\x04" . chr(($this->dis << 2) + 0) . self::word2bin($d) . "\x0\x0";
 
 		if ($this->transparent_color > -1 && ord($this->frameSources[$i] { 10 }) & 0x80) {
 		  
@@ -423,17 +428,16 @@ class AnimGif
 
 		return 1;
 	}
-    
-}
 
-/**
- * Convert an integer to 2-byte little-endian binary data
- * 
- * @param integer $word Number to encode
- * 
- * @return string of 2 bytes representing @word as binary data
- */
-function word2bin($word)
-{
-	return (chr($word & 0xFF).chr(($word >> 8) & 0xFF));
+	/**
+	 * Convert an integer to 2-byte little-endian binary data
+	 *
+	 * @param integer $word Number to encode
+	 *
+	 * @return string of 2 bytes representing @word as binary data
+	 */
+	private static function word2bin($word)
+	{
+		return (chr($word & 0xFF).chr(($word >> 8) & 0xFF));
+	}
 }
