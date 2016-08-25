@@ -1,57 +1,11 @@
 <?php
 
-/* CHANGES of the "lunakid fork":
-
-See CHANGES.txt for TODO items and release notes!
-
-DONE:
-+ See the GitHub commit log for a detailed change history!
---------
-Old (pre-1.2) manual change log (partly parallel with the GitHub commit log):
-+ Renamed encodeAsciiToChar() to word2bin() & fixed its description.
-+ Added error + check: 'ERR04' => 'Loading from URLs is disabled by PHP.'.
-+ file_exists() -> @is_readable() (Better to take no risk of any PHP output
-  in a raw GIF transfer...)
-+ Oops, also need to fix the default delay. And then also change it to 100ms.
-  (Because browsers seem to have difficulties handling too fast animations.)
-+ Anim delay doesn't seem to be set in ms, at all. :-o
-  -> Yeah, they ARE NOT in millisecs! See: http://www.w3.org/Graphics/GIF/spec-gif89a.txt
-  Fixing the docs.
-1.1:
-+ Fixed ERR01 "Source is not a GIF image.": there's a .png in the examples!
-  -> And it does support non-GIF files actually!
-  Moved the error check to resource inputs only, and changed it to
-  "Resource is not a GIF image.".
-+ create() should iterate $frames with foreach() not with for, assuming direct
-  indexes from 0 to < count.
-  (The array keys can be anything, and should not affect the results.)
-+ Removed unused $mode from reporting ERR02.
-+ $duration now has a meaningful default in create().
-+ $frames was incorrectly made an optional arg. of create().
-+ Support uniform timing without an array.
-+ Separate ERR00 from $durations not being an array.
-+ Fixed leftover $GIF_tim in create().
-+ Renamed method getGif() to get().
-+ Renamed class to AnimGif (from GifCreator).
-+ Made $this->version a define (VERSION).
-+ Made $this->errors really static (self::$errors).
-+ Moved encodeAsciiToChar() out from the class to the namespace root as a general utility fn.
-+ Moved getGif to the "public" section (and removed the Getter/Setter section).
-+ Moved reset() closer up to the ctor.
-+ Changed comments here & there.
-+ Whitespaces: fixed some tab/space mismatch etc.
-+ Changed {$i} indexes to [$i] in gifBlockCompare(), just for fun. ;)
-*/
-
 namespace GifCreator;
-
-const VERSION = '1.3+';
 
 /**
  * Create an animated GIF from multiple images
  *
- * @link https://github.com/lunakid/AnimGif
- * @author Sybio (Clément Guillemain / @Sybio01), lunakid (@GitHub, @Gmail, @SO etc.)
+ * @author Sybio (Clément Guillemain / @Sybio01), lunakid (@GitHub, @Gmail, @SO etc.), TomA-R
  * @license http://opensource.org/licenses/gpl-license.php GNU Public License
  * @copyright Clément Guillemain, Szabolcs Szász
  */
@@ -60,58 +14,46 @@ class AnimGif
 	const DEFAULT_DURATION = 10;
 
 	/**
-	* @var string The generated (binary) image
-	*/
-	private $gif;
+	 * @var string The generated (binary) image
+	 */
+	private $gif = 'GIF89a';
 
 	/**
-	* @var boolean Has the image been built or not
-	*/
-	private $imgBuilt;
+	 * @var boolean Has the image been built or not
+	 */
+	private $imgBuilt = false;
 
 	/**
-	* @var string[] Frames string sources
-	*/
+	 * @var string[] Frames string sources
+	 */
 	private $frameSources = array();
 
 	/**
-	* @var integer Gif loop
-	*/
-	private $loop;
-
-	/**
-	* @var integer Gif transparent color index
-	*/
-	private $transparent_color;
-
-	/**
-	* @var array
-	*/
-	private static $errors;
-
-	/**
-	 * AnimGif constructor
+	 * @var int Gif loop
 	 */
-	public function __construct()
-	{
-		$this->reset();
+	private $loop = 0;
 
-		self::$errors = array(
-			'ERR00' => 'Need at least 2 frames for an animation.',
-			'ERR01' => 'Resource is not a GIF image.',
-			'ERR02' => 'Only image resource variables, file paths, URLs or binary bitmap data are accepted.',
-			'ERR03' => 'Cannot make animation from animated GIF.',
-			'ERR04' => 'Loading from URLs is disabled by PHP.',
-			'ERR05' => 'Failed to load or invalid image (dir): "%s".',
-		);
-	}
+	/**
+	 * @var integer Gif transparent color index
+	 */
+	private $transparentColor = -1;
+
+    /**
+     * @var null|int Set this if you want the image to be resized
+     */
+    private $imageWidth = null;
+
+    /**
+     * @var null|int Set this if you want the image to be resized
+     */
+    private $imageHeight = null;
 
 	/**
 	 * Create animated GIF from source images
-	 * 
+	 *
 	 * @param array $frames The source images: can be a local dir path, or an array
 	 *                      of file paths, resource image variables, binary data or image URLs.
-	 * @param int[] $durations The duration (in 1/100s) of the individual frames
+	 * @param int[]|int $durations The duration (in 1/100s) of the individual frames
 	 * @param int $loop Number of loops before stopping the animation (set to 0 for an infinite loop).
 	 * @param int[] $disposalMethods The disposal method specifies what happens to the current image data when you
 	 *        move onto the next. We have three bits which means we can represent a number
@@ -124,17 +66,20 @@ class AnimGif
 	 * @return $this
 	 * @throws \Exception
 	 */
-	public function create(array $frames, array $durations = array(), $loop = 0, array $disposalMethods = array())
+	public function create(array $frames, $durations = 10, $loop = 0, array $disposalMethods = array())
 	{
-		$this->loop = ($loop > -1) ? $loop : 0;
-
+        $this->loop = ($loop > -1) ? $loop : 0;
 		$frames = array_values($frames);
 
 		// ensure keys match for both arrays
 		if (is_array($durations)) {
 			$durations = array_values($durations);
-			if (count($frames) !== count($durations)) {
-				throw new \InvalidArgumentException('The number of frame elements must match the number of duration elements.');
+			if (count($frames) > count($durations)) {
+                // Fill the durations array with dummy data (same as last frame) to make it have
+                // at least as many values as frames. This way we always have a duration for every frame
+                while (count($durations) <= count($frames)) {
+                    $durations[] = end($durations);
+                }
 			}
 		} else {
 			$durations = array_fill(0, count($frames) - 1, self::DEFAULT_DURATION);
@@ -143,9 +88,10 @@ class AnimGif
 		// Check if $frames is a dir; get all files in ascending order if yes (else die):
 		if (!is_array($frames)) {
 			$frames_dir = $frames;
-			if (@is_dir($frames_dir)) {
-				if ($frames = scandir($frames_dir)) {
-					$frames = array_filter($frames, function($x) { 
+			if (is_dir($frames_dir)) {
+                $frames = scandir($frames_dir);
+				if ($frames) {
+					$frames = array_filter($frames, function($x) {
 						// Should these two below be selectable?
 						return $x[0] != '.'; // Or: $x != "." && $x != "..";
 					});
@@ -157,71 +103,22 @@ class AnimGif
 			}
 
 			if (!is_array($frames)) {
-				throw new \Exception(VERSION.': '
-					. sprintf(self::$errors['ERR05'], $frames_dir)); // $frame is expected to be a string here; see the other ERR05 case!
+                // $frame is expected to be a string here
+				throw new \Exception(sprintf('Failed to load or invalid image (dir): "%s".', $frames_dir));
 			}
 		}
 
-		assert(is_array($frames));
+		foreach ($frames as $key => $frame) {
 
-		if (sizeof($frames) < 2) {
-			throw new \Exception(VERSION.': '.self::$errors['ERR00']);
-		}
+			$this->loadFrame($frame);
 
-		$i = 0;
-		foreach ($frames as $frame) {
-			if (is_resource($frame)) { // in-memory image resource (hopefully)
+			for ($j = (13 + 3 * (2 << (ord($this->frameSources[$key]{10}) & 0x07))), $k = true; $k; $j++) {
 
-				$resourceImg = $frame;
-
-				ob_start();
-				imagegif($frame);
-				$this->frameSources[] = ob_get_contents();
-				ob_end_clean();
-
-				if (substr($this->frameSources[$i], 0, 6) != 'GIF87a' && substr($this->frameSources[$i], 0, 6) != 'GIF89a') {
-					throw new \Exception(VERSION.': '.$i.' '.self::$errors['ERR01']);
-				}
-
-			} elseif (is_string($frame)) { // file path, URL or binary data
-
-				if (@is_readable($frame)) { // file path
-					$bin = file_get_contents($frame);
-				} elseif (preg_match('/\b(?:(?:https?|ftp):\/\/|www\.)[-a-z0-9+&@#\/%?=~_|!:,.;]*[-a-z0-9+&@#\/%=~_|]/i', $frame)) {
- 					if (ini_get('allow_url_fopen')) {
-						$bin = @file_get_contents($frame);
-					} else {
-						throw new \Exception(VERSION.': '.$i.' '.self::$errors['ERR04']);
-					}
-				} else {
-					$bin = $frame;
-				}
-
-				if (!($bin && ($resourceImg = imagecreatefromstring($bin)))) {
-					throw new \Exception(VERSION . ': ' . $i . ' '
-							. sprintf(self::$errors['ERR05'], substr($frame, 0, 200))); //!! $frame may be binary data, not a name!
-				}
-
-				ob_start();
-				imagegif($resourceImg);
-				$this->frameSources[] = ob_get_contents();
-				ob_end_clean();
-
-			} else {
-				throw new \Exception(VERSION.': '.self::$errors['ERR02']);
-			}
-
-			if ($i == 0) {
-				$this->transparent_color = imagecolortransparent($resourceImg);
-			}
-
-			for ($j = (13 + 3 * (2 << (ord($this->frameSources[$i]{10}) & 0x07))), $k = TRUE; $k; $j++) {
-
-				switch ($this->frameSources[$i]{$j}) {
+				switch ($this->frameSources[$key]{$j}) {
 
 					case '!':
-						if ((substr($this->frameSources[$i], ($j + 3), 8)) == 'NETSCAPE') {
-							throw new \Exception(VERSION . ': ' . self::$errors['ERR03'] . ' (' . ($i + 1) . ' source).');
+						if ((substr($this->frameSources[$key], ($j + 3), 8)) == 'NETSCAPE') {
+							throw new \Exception('Cannot make animation from animated GIF. (' . ($key + 1) . ' source).');
 						}
 						break;
 
@@ -230,15 +127,9 @@ class AnimGif
 						break;
 				}
 			}
-
-			unset($resourceImg);
-
-			++$i;
 		}
 
-
 		$this->gifAddHeader();
-
 		for ($i = 0; $i < count($this->frameSources); $i++) {
 			$this->addGifFrames($i, $durations[$i], $disposalMethods[$i]);
 		}
@@ -248,30 +139,145 @@ class AnimGif
 		return $this;
 	}
 
+    /**
+     * Write a frame's binary data into $this->frameSources
+     *
+     * @param $frame
+     * @throws \Exception
+     */
+    protected function loadFrame($frame)
+    {
+        $frameNumber = count($this->frameSources);
+
+        if (is_resource($frame)) {
+
+            // in-memory image resource (hopefully)
+            $frameResource = $frame;
+
+        } elseif (is_string($frame)) {
+
+            // file path, URL or binary data obtained by something like file_get_contents()
+            if (is_readable($frame)) {
+
+                // file path
+                $bin = file_get_contents($frame);
+
+            } elseif (preg_match('/\b(?:(?:https?|ftp):\/\/|www\.)[-a-z0-9+&@#\/%?=~_|!:,.;]*[-a-z0-9+&@#\/%=~_|]/i', $frame)) {
+
+                // URL
+                if (ini_get('allow_url_fopen')) {
+                    $bin = @file_get_contents($frame);
+                } else {
+                    throw new \Exception($frameNumber . ' Loading from URLs is disabled by PHP.');
+                }
+
+            } elseif (!ctype_print($frame)) {
+
+                // Already binary string, like from file_get_contents()
+                $bin = $frame;
+
+            } else {
+
+                throw new \Exception($frameNumber . printf(' Failed to load or invalid image (dir): "%s".', substr($frame, 0, 200)));
+
+            }
+
+            $frameResource = imagecreatefromstring($bin);
+            if (!$frameResource) {
+                // $frame may be binary data, not a name!
+                throw new \Exception($frameNumber . printf(' Failed to load or invalid image (dir): "%s".', substr($frame, 0, 200)));
+            }
+
+        } else {
+            throw new \Exception('Only image resource variables, file paths, URLs or binary bitmap data are accepted.');
+        }
+
+        if (!is_int($this->imageWidth)) {
+            $this->imageWidth = imagesx($frameResource);
+        }
+
+        if (!is_int($this->imageHeight)) {
+            $this->imageHeight = imagesy($frameResource);
+        }
+
+        // Now we have the binary data in $frameResource
+        $newImageForFrame = imagecreatetruecolor($this->imageWidth, $this->imageHeight);
+
+        $transparent = imagecolorallocatealpha($newImageForFrame, 0, 0, 0, 127);
+        imagecopyresized($newImageForFrame, $frameResource, 0, 0, 0, 0, $this->imageWidth, $this->imageHeight, imagesx($frameResource), imagesy($frameResource));
+        imagefill($newImageForFrame, 0, 0, $transparent);
+        imagealphablending($newImageForFrame, false);
+        imagesavealpha($newImageForFrame, true);
+
+        ob_start();
+        imagegif($newImageForFrame);
+        $this->frameSources[] = ob_get_contents();
+        ob_end_clean();
+
+        if (substr($this->frameSources[$frameNumber], 0, 6) != 'GIF87a' && substr($this->frameSources[$frameNumber], 0, 6) != 'GIF89a') {
+            throw new \Exception($frameNumber . ' Resource is not a GIF image.');
+        }
+
+        // Check the transparency of the first frame
+        if ($frameNumber == 0) {
+            $this->transparentColor = imagecolortransparent($frameResource);
+        }
+    }
+
+    /**
+     * Set the created gif's width. If this isn't set, it will use the width
+     * of the frames provided
+     *
+     * @param $width
+     * @return $this Chainable
+     */
+    public function setImageWidth($width)
+    {
+        if (is_int($width)) {
+            $this->imageWidth = $width;
+        }
+        return $this;
+    }
+
+    /**
+     * Set the created gif's height. If this isn't set, it will use the height
+     * of the frames provided
+     *
+     * @param $height
+     * @return $this Chainable
+     */
+    public function setImageHeight($height)
+    {
+        if (is_int($height)) {
+            $this->imageHeight = $height;
+        }
+        return $this;
+    }
+
 	/**
 	 * Get the resulting GIF image binary
-	 * 
+	 *
 	 * @return string
 	 */
 	public function get()
 	{
 		return $this->gif;
 	}
-    
+
 	/**
 	 * Save the resulting GIF to a file.
-	 * 
+	 *
 	 * @param $filename String Target file path
-	 * 
+	 *
 	 * @return int The result of file_put_contents($filename)
 	 */
 	public function save($filename)
 	{
-		return file_put_contents($filename, $this->gif);
+		return file_put_contents($filename, $this->get());
 	}
-    
+
 	/**
-	 * Clean-up the current object (also used by the ctor.)
+	 * Clean-up the current object
 	 */
 	public function reset()
 	{
@@ -279,21 +285,90 @@ class AnimGif
 		$this->gif = 'GIF89a'; // the GIF header
 		$this->imgBuilt = false;
 		$this->loop = 0;
-		$this->transparent_color = -1;
+		$this->transparentColor = -1;
 	}
 
 	/**
 	 * Add the header gif string in its source
-	 */
-	protected function gifAddHeader()
+     * @see http://giflib.sourceforge.net/whatsinagif/bits_and_bytes.html#header_block
+     *
+     * Looks something like:
+     *   0 : 47 49 46 38 39 61 64 01 68 01 e7 00 00 04 02 04 [GIF89ad.h.......]
+     *  10 : 9c 82 1c dc c2 0c 7c 1e 24 c4 a6 14 4c 3e 1c c4 [......|.$...L>..]
+     *  20 : c6 c4 cc b2 14 84 82 84 7c 62 34 fc d2 0c ac 92 [........|b4.....]
+     *  30 : 14 74 5a 2c e4 b2 44 ec c6 14 c4 9e 2c 3c 1e 24 [.tZ,..D.....,<.$]
+     *  40 : 5c 4e 1c 8c 76 1c f4 c2 3c b4 8e 34 b4 92 2c a4 [\N..v...<..4..,.]
+     *  50 : 82 34 bc 1e 24 ec ea ec dc b6 24 cc aa 2c 4c 4a [.4..$.....$..,LJ]
+     *  60 : 4c 64 66 64 e4 ba 34 ec ca 0c 64 1e 24 54 46 24 [Ldfd..4...d.$TF$]
+     *  70 : 7c 6e 1c fc da 04 8c 7a 14 24 1e 1c c4 aa 0c dc [|n.....z.$......]
+     *  80 : be 0c ac aa ac f4 d2 14 3c 32 24 54 52 54 bc 9a [........<2$TRT..]
+     *  90 : 34 f4 ba 44 a4 8a 24 a4 1e 24 b4 9a 14 74 62 14 [4..D..$..$...tb.]
+     *  A0 : cc a6 34 f4 ca 2c a4 8a 2c e4 1e 24 f4 f6 f4 f4 [..4..,..,..$....]
+     *  B0 : ca 24 8c 6e 34 2c 2a 1c d4 d6 d4 94 96 94 cc 9e [.$.n4,*.........]
+     *  C0 : 3c 64 56 1c a4 82 3c dc ae 34 e4 ba 3c 54 46 2c [<dV...<..4..<TF,]
+     *  D0 : 7c 6a 24 9c 7e 2c 9c 82 24 e4 c2 24 8c 1e 24 c4 [|j$.~,..$..$..$.]
+     *  E0 : a2 24 4c 42 1c d4 b2 14 fc d6 04 74 5e 24 ec c2 [.$LB.......t^$..]
+     *  F0 : 24 4c 1e 24 64 52 24 8c 72 2c f4 c6 34 bc 96 3c [$L.$dR$.r,..4..<]
+     *  100 : a4 86 2c cc 1e 24 dc b2 34 d4 aa 44 74 72 74 e4 [..,..$..4..Dtrt.]
+     *  110 : be 2c 54 4a 1c 94 7a 34 cc aa 24 dc ba 1c fc d2 [.,TJ..z4..$.....]
+     *  120 : 14 3c 3a 3c bc 9e 2c b4 9a 1c fc fe fc f4 ce 1c [.<:<..,.........]
+     *  130 : 34 2e 2c cc a2 34 9c 86 14 c4 a6 1c 4c 3e 24 cc [4.,..4......L>$.]
+     *  140 : c6 c4 94 8e 8c 7c 66 2c b4 96 24 e4 b6 3c ec c6 [.....|f,..$..<..]
+     *  150 : 1c 8c 76 24 b4 92 34 f4 f2 f4 dc b6 2c 6c 6a 6c [..v$..4.....,ljl]
+     *  160 : ec ca 14 6c 1e 24 84 6e 14 8c 7a 1c 2c 1e 1c dc [...l.$.n..z.,...]
+     *  170 : be 14 bc ba bc f4 d2 1c 3c 36 1c 5c 56 54 f4 be [........<6.\VT..]
+     *  180 : 44 a4 8e 1c ac 1e 24 b4 9e 0c 74 62 1c f4 ca 34 [D.....$...tb...4]
+     *  190 : e4 e2 e4 9c 9e 9c fc fa fc ec 1e 24 94 1e 24 54 [...........$..$T]
+     *  1A0 : 1e 24 d4 1e 24 d4 b6 0c d4 ae 3c cc ae 1c 2c 2a [.$..$.....<...,*]
+     *  1B0 : 24 7c 6a 2c e4 c2 2c fc d6 0c 74 5e 2c 64 52 2c [$|j,..,...t^,dR,]
+     *  1C0 : f4 c6 3c a4 86 34 e4 be 34 54 4a 24 bc 9e 34 f4 [..<..4..4TJ$..4.]
+     *  1D0 : ce 24 cc a2 3c 00 00 00 00 00 00 00 00 00 00 00 [.$..<...........]
+     *  1E0 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  1F0 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  200 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  210 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  220 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  230 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  240 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  250 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  260 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  270 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  280 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  290 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  2A0 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  2B0 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  2C0 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  2D0 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  2E0 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  2F0 : 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 [................]
+     *  300 : 00 00 00 00 00 00 00 00 00 00 00 00 00 21 ff 0b [.............!..]
+     *  310 : 4e 45 54 53 43 41 50 45 32 2e 30 03 01 00 00 00 [NETSCAPE2.0.....]
+     *
+     * - Header
+     * The first 3 bytes (47 49 46) are called the signature. These should always be "GIF" (ie 47="G", 49="I", 46="F").
+     * The next 3 bytes (38 39 61) specify the version of the specification that was used to encode the image (e.g. 89a)
+     *
+     * - Logical Screen Descriptor
+     * The next 7 bytes (64 01 68 01 e7 00 00) are the logical screen descriptor which tells the decoder how much room
+     *      this image will take up. It starts with the canvas width and canvas height. These value can be found in the
+     *      first two pairs of two bytes each - with the least significant bit first (64 01 <- width =
+     *      0000000101000000 = 256+63 = 320, 68 01 <- height = 0000000101000100 = 256+)
+     *
+     * - [Optional] Global colour table lists the colours used in the image (can someone confirm?)
+     *
+     * - Application Extension Block (21 ff 0b 4e 45 54 53 43 41 50 45 32 2e 30) In this case it's
+     * NETSCAPE2.0 followed by actual application data (03 <- three bytes to follow, 01 <- always the same,
+     * 00 <- how often to repeat; 0 is forever, 00 <-- ???, 00 <-- block terminator)
+     */
+	private function gifAddHeader()
 	{
 		if (ord($this->frameSources[0] { 10 }) & 0x80) {
 
-			$cmap = 3 * (2 << (ord($this->frameSources[0] { 10 }) & 0x07));
+			$colorMap = 3 * (2 << (ord($this->frameSources[0]{10}) & 0x07));
 
 			$this->gif .= substr($this->frameSources[0], 6, 7);
-			$this->gif .= substr($this->frameSources[0], 13, $cmap);
-			$this->gif .= "!\377\13NETSCAPE2.0\3\1".self::word2bin($this->loop)."\0";
+			$this->gif .= substr($this->frameSources[0], 13, $colorMap);
+			$this->gif .= "!\377\13NETSCAPE2.0\3\1" . self::word2bin($this->loop) . "\0";
 		}
 	}
 
@@ -304,88 +379,76 @@ class AnimGif
 	 * @param int $duration
 	 * @param int $disposalMethod
 	 */
-	protected function addGifFrames($frameNumber, $duration, $disposalMethod)
-	{
-		$Locals_str = 13 + 3 * (2 << (ord($this->frameSources[$frameNumber] { 10 }) & 0x07));
+    protected function addGifFrames($frameNumber, $duration, $disposalMethod)
+    {
+        // @todo: Figure out how this works and write some comments/docs
+        $Locals_str = 13 + 3 * (2 << (ord($this->frameSources[$frameNumber]{10}) & 0x07));
 
-		$Locals_end = strlen($this->frameSources[$frameNumber]) - $Locals_str - 1;
-		$Locals_tmp = substr($this->frameSources[$frameNumber], $Locals_str, $Locals_end);
+        $Locals_end = strlen($this->frameSources[$frameNumber]) - $Locals_str - 1;
+        $Locals_tmp = substr($this->frameSources[$frameNumber], $Locals_str, $Locals_end);
 
-		$Global_len = 2 << (ord($this->frameSources[0] { 10 }) & 0x07);
-		$Locals_len = 2 << (ord($this->frameSources[$frameNumber] { 10 }) & 0x07);
+        $Global_len = 2 << (ord($this->frameSources[0]{10}) & 0x07);
+        $Locals_len = 2 << (ord($this->frameSources[$frameNumber]{10}) & 0x07);
 
-		$Global_rgb = substr($this->frameSources[ 0], 13, 3 * (2 << (ord($this->frameSources[ 0] { 10 }) & 0x07)));
-		$Locals_rgb = substr($this->frameSources[$frameNumber], 13, 3 * (2 << (ord($this->frameSources[$frameNumber] { 10 }) & 0x07)));
+        $Global_rgb = substr($this->frameSources[0], 13, 3 * (2 << (ord($this->frameSources[ 0] { 10 }) & 0x07)));
+        $Locals_rgb = substr($this->frameSources[$frameNumber], 13, 3 * (2 << (ord($this->frameSources[$frameNumber] { 10 }) & 0x07)));
 
-		$Locals_ext = "!\xF9\x04" . chr(($disposalMethod << 2) + 0) . self::word2bin($duration) . "\x0\x0";
+        $Locals_ext = "!\xF9\x04" . chr(($disposalMethod << 2) + 1) . self::word2bin($duration) . "\x0\x0";
 
-		if ($this->transparent_color > -1 && ord($this->frameSources[$frameNumber] { 10 }) & 0x80) {
+        switch ($Locals_tmp { 0 }) {
 
-			for ($j = 0; $j < (2 << (ord($this->frameSources[$frameNumber] { 10 } ) & 0x07)); $j++) {
+            case '!':
 
-				if (ord($Locals_rgb { 3 * $j + 0 }) == (($this->transparent_color >> 16) & 0xFF) &&
-					ord($Locals_rgb { 3 * $j + 1 }) == (($this->transparent_color >> 8) & 0xFF) &&
-					ord($Locals_rgb { 3 * $j + 2 }) == (($this->transparent_color >> 0) & 0xFF)
-				) {
-					$Locals_ext = "!\xF9\x04".chr(($disposalMethod << 2) + 1).chr(($duration >> 0) & 0xFF).chr(($duration >> 8) & 0xFF).chr($j)."\x0";
-					break;
-				}
-			}
-		}
+                $Locals_img = substr($Locals_tmp, 8, 10);
+                $Locals_tmp = substr($Locals_tmp, 18, strlen($Locals_tmp) - 18);
 
-		switch ($Locals_tmp { 0 }) {
+                break;
 
-			case '!':
+            case ',':
 
-				$Locals_img = substr($Locals_tmp, 8, 10);
-				$Locals_tmp = substr($Locals_tmp, 18, strlen($Locals_tmp) - 18);
+                $Locals_img = substr($Locals_tmp, 0, 10);
+                $Locals_tmp = substr($Locals_tmp, 10, strlen($Locals_tmp) - 10);
 
-				break;
+                break;
+        }
 
-			case ',':
+        if (ord($this->frameSources[$frameNumber] { 10 }) & 0x80 && $this->imgBuilt) {
 
-				$Locals_img = substr($Locals_tmp, 0, 10);
-				$Locals_tmp = substr($Locals_tmp, 10, strlen($Locals_tmp) - 10);
+            if ($Global_len == $Locals_len) {
 
-				break;
-		}
-        
-		if (ord($this->frameSources[$frameNumber] { 10 }) & 0x80 && $this->imgBuilt) {
+                if ($this->gifBlockCompare($Global_rgb, $Locals_rgb, $Global_len)) {
 
-			if ($Global_len == $Locals_len) {
+                    $this->gif .= $Locals_ext.$Locals_img.$Locals_tmp;
 
-				if ($this->gifBlockCompare($Global_rgb, $Locals_rgb, $Global_len)) {
+                } else {
 
-					$this->gif .= $Locals_ext.$Locals_img.$Locals_tmp;
+                    $byte = ord($Locals_img { 9 });
+                    $byte |= 0x80;
+                    $byte &= 0xF8;
+                    $byte |= (ord($this->frameSources[0] { 10 }) & 0x07);
+                    $Locals_img { 9 } = chr($byte);
+                    $this->gif .= $Locals_ext.$Locals_img.$Locals_rgb.$Locals_tmp;
+                }
 
-				} else {
+            } else {
 
-					$byte = ord($Locals_img { 9 });
-					$byte |= 0x80;
-					$byte &= 0xF8;
-					$byte |= (ord($this->frameSources[0] { 10 }) & 0x07);
-					$Locals_img { 9 } = chr($byte);
-					$this->gif .= $Locals_ext.$Locals_img.$Locals_rgb.$Locals_tmp;
-				}
-                
-			} else {
-			 
-				$byte = ord($Locals_img { 9 });
-				$byte |= 0x80;
-				$byte &= 0xF8;
-				$byte |= (ord($this->frameSources[$frameNumber] { 10 }) & 0x07);
-				$Locals_img { 9 } = chr($byte);
-				$this->gif .= $Locals_ext.$Locals_img.$Locals_rgb.$Locals_tmp;
-			}
-            
-		} else {
+                $byte = ord($Locals_img { 9 });
+                $byte |= 0x80;
+                $byte &= 0xF8;
+                $byte |= (ord($this->frameSources[$frameNumber] { 10 }) & 0x07);
+                $Locals_img { 9 } = chr($byte);
+                $this->gif .= $Locals_ext.$Locals_img.$Locals_rgb.$Locals_tmp;
+            }
 
-			$this->gif .= $Locals_ext.$Locals_img.$Locals_tmp;
-		}
-        
-		$this->imgBuilt = true;
-	}
-    
+        } else {
+
+            $this->gif .= $Locals_ext.$Locals_img.$Locals_tmp;
+        }
+
+        $this->imgBuilt = true;
+    }
+
+
 	/**
 	 * Add the gif string footer char
 	 */
@@ -393,14 +456,14 @@ class AnimGif
 	{
 		$this->gif .= ';';
 	}
-    
+
 	/**
 	 * Compare two block and return the version
-	 * 
+	 *
 	 * @param string $globalBlock
 	 * @param string $localBlock
 	 * @param integer $length
-	 * 
+	 *
 	 * @return integer
 	 */
 	protected function gifBlockCompare($globalBlock, $localBlock, $length)
@@ -427,6 +490,6 @@ class AnimGif
 	 */
 	private static function word2bin($word)
 	{
-		return (chr($word & 0xFF).chr(($word >> 8) & 0xFF));
+		return chr($word & 0xFF) . chr(($word >> 8) & 0xFF);
 	}
 }
